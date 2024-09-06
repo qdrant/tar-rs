@@ -28,6 +28,7 @@ pub struct ArchiveInner<R: ?Sized> {
     preserve_ownerships: bool,
     preserve_mtime: bool,
     overwrite: bool,
+    sync_on_unpack: bool,
     ignore_zeros: bool,
     obj: RefCell<R>,
 }
@@ -39,6 +40,7 @@ pub struct Entries<'a, R: 'a + Read> {
 }
 
 trait SeekRead: Read + Seek {}
+
 impl<R: Read + Seek> SeekRead for R {}
 
 struct EntriesFields<'a> {
@@ -60,6 +62,7 @@ impl<R: Read> Archive<R> {
                 preserve_ownerships: false,
                 preserve_mtime: true,
                 overwrite: true,
+                sync_on_unpack: false,
                 ignore_zeros: false,
                 obj: RefCell::new(obj),
                 pos: Cell::new(0),
@@ -156,6 +159,11 @@ impl<R: Read> Archive<R> {
     /// Indicate whether files and symlinks should be overwritten on extraction.
     pub fn set_overwrite(&mut self, overwrite: bool) {
         self.inner.overwrite = overwrite;
+    }
+
+    /// Indicate whether to perform a `sync_all` after each unpacked file.
+    pub fn set_sync_on_unpack(&mut self, flush_on_unpack: bool) {
+        self.inner.sync_on_unpack = flush_on_unpack;
     }
 
     /// Indicate whether access time information is preserved when unpacking
@@ -271,6 +279,7 @@ impl<'a, R: Read> Entries<'a, R> {
         }
     }
 }
+
 impl<'a, R: Read> Iterator for Entries<'a, R> {
     type Item = io::Result<Entry<'a, R>>;
 
@@ -359,6 +368,7 @@ impl<'a> EntriesFields<'a> {
             preserve_mtime: self.archive.inner.preserve_mtime,
             overwrite: self.archive.inner.overwrite,
             preserve_ownerships: self.archive.inner.preserve_ownerships,
+            sync_on_unpack: self.archive.inner.sync_on_unpack,
         };
 
         // Store where the next entry is, rounding up by 512 bytes (the size of

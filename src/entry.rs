@@ -42,6 +42,7 @@ pub struct EntryFields<'a> {
     pub preserve_ownerships: bool,
     pub preserve_mtime: bool,
     pub overwrite: bool,
+    pub sync_on_unpack: bool,
 }
 
 pub enum EntryIo<'a> {
@@ -707,6 +708,11 @@ impl<'a> EntryFields<'a> {
         if self.unpack_xattrs {
             set_xattrs(self, dst)?;
         }
+
+        if self.sync_on_unpack {
+            f.sync_all()?;
+        }
+
         return Ok(Unpacked::File(f));
 
         fn set_ownerships(
