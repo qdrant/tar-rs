@@ -28,7 +28,7 @@ pub struct ArchiveInner<R: ?Sized> {
     preserve_ownerships: bool,
     preserve_mtime: bool,
     overwrite: bool,
-    sync_on_unpack: bool,
+    sync: bool,
     ignore_zeros: bool,
     obj: RefCell<R>,
 }
@@ -62,7 +62,7 @@ impl<R: Read> Archive<R> {
                 preserve_ownerships: false,
                 preserve_mtime: true,
                 overwrite: true,
-                sync_on_unpack: false,
+                sync: false,
                 ignore_zeros: false,
                 obj: RefCell::new(obj),
                 pos: Cell::new(0),
@@ -162,8 +162,8 @@ impl<R: Read> Archive<R> {
     }
 
     /// Indicate whether to perform a `sync_all` after each unpacked file.
-    pub fn set_sync_on_unpack(&mut self, sync_on_unpack: bool) {
-        self.inner.sync_on_unpack = sync_on_unpack;
+    pub fn set_sync(&mut self, flush: bool) {
+        self.inner.sync = flush;
     }
 
     /// Indicate whether access time information is preserved when unpacking
@@ -368,7 +368,7 @@ impl<'a> EntriesFields<'a> {
             preserve_mtime: self.archive.inner.preserve_mtime,
             overwrite: self.archive.inner.overwrite,
             preserve_ownerships: self.archive.inner.preserve_ownerships,
-            sync_on_unpack: self.archive.inner.sync_on_unpack,
+            sync: self.archive.inner.sync,
         };
 
         // Store where the next entry is, rounding up by 512 bytes (the size of
