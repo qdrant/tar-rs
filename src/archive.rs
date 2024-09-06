@@ -162,8 +162,8 @@ impl<R: Read> Archive<R> {
     }
 
     /// Indicate whether to perform a `sync_all` after each unpacked file.
-    pub fn set_sync_on_unpack(&mut self, flush_on_unpack: bool) {
-        self.inner.sync_on_unpack = flush_on_unpack;
+    pub fn set_sync_on_unpack(&mut self, sync_on_unpack: bool) {
+        self.inner.sync_on_unpack = sync_on_unpack;
     }
 
     /// Indicate whether access time information is preserved when unpacking
