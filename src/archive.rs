@@ -161,7 +161,10 @@ impl<R: Read> Archive<R> {
         self.inner.overwrite = overwrite;
     }
 
-    /// Indicate whether to perform a `sync_all` after each unpacked file.
+    /// Indicate whether to perform a [`sync_all`] call after each unpacked
+    /// file.
+    ///
+    /// [`sync_all`]: std::fs::File::sync_all
     pub fn set_sync(&mut self, flush: bool) {
         self.inner.sync = flush;
     }
