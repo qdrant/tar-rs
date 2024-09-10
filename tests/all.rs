@@ -1044,6 +1044,45 @@ fn linkname_literal() {
 }
 
 #[test]
+fn append_writer() {
+    let mut b = Builder::new(Cursor::new(Vec::new()));
+
+    let mut h = Header::new_gnu();
+    h.set_uid(42);
+    let mut writer = t!(b.append_writer(&mut h, "file1"));
+    t!(writer.write_all(b"foo"));
+    t!(writer.write_all(b"barbaz"));
+    t!(writer.finish());
+
+    let mut h = Header::new_gnu();
+    h.set_uid(43);
+    let long_path: PathBuf = repeat("abcd").take(50).collect();
+    let mut writer = t!(b.append_writer(&mut h, &long_path));
+    let long_data = repeat(b'x').take(513).collect::<Vec<u8>>();
+    t!(writer.write_all(&long_data));
+    t!(writer.finish());
+
+    let contents = t!(b.into_inner()).into_inner();
+    let mut ar = Archive::new(&contents[..]);
+    let mut entries = t!(ar.entries());
+
+    let e = &mut t!(entries.next().unwrap());
+    assert_eq!(e.header().uid().unwrap(), 42);
+    assert_eq!(&*e.path_bytes(), b"file1");
+    let mut r = Vec::new();
+    t!(e.read_to_end(&mut r));
+    assert_eq!(&r[..], b"foobarbaz");
+
+    let e = &mut t!(entries.next().unwrap());
+    assert_eq!(e.header().uid().unwrap(), 43);
+    assert_eq!(t!(e.path()), long_path.as_path());
+    let mut r = Vec::new();
+    t!(e.read_to_end(&mut r));
+    assert_eq!(r.len(), 513);
+    assert!(r.iter().all(|b| *b == b'x'));
+}
+
+#[test]
 fn encoded_long_name_has_trailing_nul() {
     let td = t!(TempBuilder::new().prefix("tar-rs").tempdir());
     let path = td.path().join("foo");
@@ -1181,6 +1220,67 @@ fn sparse_with_trailing() {
     assert_eq!(&s[..0xc], "0MB through\n");
     assert!(s[0xc..0x100_000].chars().all(|x| x == '\u{0}'));
     assert_eq!(&s[0x100_000..], "1MB through\n");
+}
+
+#[test]
+fn writing_sparse() {
+    let mut ar = Builder::new(Vec::new());
+    let td = t!(TempBuilder::new().prefix("tar-rs").tempdir());
+
+    let mut files = Vec::new();
+    let mut append_file = |name: &str, chunks: &[(u64, u64)]| {
+        let path = td.path().join(name);
+        let mut file = t!(File::create(&path));
+        t!(file.set_len(
+            chunks
+                .iter()
+                .map(|&(off, len)| off + len)
+                .max()
+                .unwrap_or(0),
+        ));
+        for (i, &(off, len)) in chunks.iter().enumerate() {
+            t!(file.seek(io::SeekFrom::Start(off)));
+            let mut data = vec![i as u8 + b'a'; len as usize];
+            data.first_mut().map(|x| *x = b'[');
+            data.last_mut().map(|x| *x = b']');
+            t!(file.write_all(&data));
+        }
+        t!(ar.append_path_with_name(&path, path.file_name().unwrap()));
+        files.push(path);
+    };
+
+    append_file("empty", &[]);
+    append_file("full_sparse", &[(0x20_000, 0)]);
+    append_file("_x", &[(0x20_000, 0x1_000)]);
+    append_file("x_", &[(0, 0x1_000), (0x20_000, 0)]);
+    append_file("_x_x", &[(0x20_000, 0x1_000), (0x40_000, 0x1_000)]);
+    append_file("x_x_", &[(0, 0x1_000), (0x20_000, 0x1_000), (0x40_000, 0)]);
+    append_file("uneven", &[(0x20_333, 0x555), (0x40_777, 0x999)]);
+
+    t!(ar.finish());
+
+    let data = t!(ar.into_inner());
+
+    // Without sparse support, the size of the tarball exceed 1MiB.
+    #[cfg(target_os = "linux")]
+    assert!(data.len() <= 37 * 1024); // ext4 (defaults to 4k block size)
+    #[cfg(target_os = "freebsd")]
+    assert!(data.len() <= 273 * 1024); // UFS (defaults to 32k block size, last block isn't a hole)
+
+    let mut ar = Archive::new(&data[..]);
+    let mut entries = t!(ar.entries());
+    for path in files {
+        let mut f = t!(entries.next().unwrap());
+
+        let mut s = String::new();
+        t!(f.read_to_string(&mut s));
+
+        let expected = t!(fs::read_to_string(&path));
+
+        assert!(s == expected, "path: {path:?}");
+    }
+
+    assert!(entries.next().is_none());
 }
 
 #[test]
